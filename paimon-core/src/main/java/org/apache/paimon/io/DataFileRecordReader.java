@@ -27,11 +27,13 @@ import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.data.PartitionInfo;
 import org.apache.paimon.data.columnar.ColumnarRowIterator;
 import org.apache.paimon.format.FormatReaderFactory;
+import org.apache.paimon.reader.EmptyFileRecordReader;
 import org.apache.paimon.reader.FileRecordIterator;
 import org.apache.paimon.reader.FileRecordReader;
 import org.apache.paimon.table.SpecialFields;
 import org.apache.paimon.types.RowType;
 import org.apache.paimon.utils.FileUtils;
+import org.apache.paimon.utils.IOUtils;
 import org.apache.paimon.utils.ProjectedRow;
 
 import javax.annotation.Nullable;
@@ -44,7 +46,7 @@ import java.util.Map;
 public class DataFileRecordReader implements FileRecordReader<InternalRow> {
 
     private final RowType tableRowType;
-    private final FileRecordReader<InternalRow> reader;
+    private FileRecordReader<InternalRow> reader;
     @Nullable private final int[] indexMapping;
     @Nullable private final PartitionInfo partitionInfo;
     @Nullable private final CastFieldGetter[] castMapping;
@@ -52,6 +54,41 @@ public class DataFileRecordReader implements FileRecordReader<InternalRow> {
     @Nullable private final Long firstRowId;
     private final long maxSequenceNumber;
     private final Map<String, Integer> systemFields;
+    private final boolean ignoreReadFail;
+
+    public DataFileRecordReader(
+            RowType tableRowType,
+            FormatReaderFactory readerFactory,
+            FormatReaderFactory.Context context,
+            @Nullable int[] indexMapping,
+            @Nullable CastFieldGetter[] castMapping,
+            @Nullable PartitionInfo partitionInfo,
+            boolean rowTrackingEnabled,
+            @Nullable Long firstRowId,
+            long maxSequenceNumber,
+            Map<String, Integer> systemFields,
+            boolean ignoreReadFail)
+            throws IOException {
+        this.ignoreReadFail = ignoreReadFail;
+        this.tableRowType = tableRowType;
+        try {
+            this.reader = readerFactory.createReader(context);
+        } catch (Exception e) {
+            if (this.ignoreReadFail) {
+                this.reader = new EmptyFileRecordReader();
+            } else {
+                FileUtils.checkExists(context.fileIO(), context.filePath());
+                throw e;
+            }
+        }
+        this.indexMapping = indexMapping;
+        this.partitionInfo = partitionInfo;
+        this.castMapping = castMapping;
+        this.rowTrackingEnabled = rowTrackingEnabled;
+        this.firstRowId = firstRowId;
+        this.maxSequenceNumber = maxSequenceNumber;
+        this.systemFields = systemFields;
+    }
 
     public DataFileRecordReader(
             RowType tableRowType,
@@ -65,26 +102,33 @@ public class DataFileRecordReader implements FileRecordReader<InternalRow> {
             long maxSequenceNumber,
             Map<String, Integer> systemFields)
             throws IOException {
-        this.tableRowType = tableRowType;
-        try {
-            this.reader = readerFactory.createReader(context);
-        } catch (Exception e) {
-            FileUtils.checkExists(context.fileIO(), context.filePath());
-            throw e;
-        }
-        this.indexMapping = indexMapping;
-        this.partitionInfo = partitionInfo;
-        this.castMapping = castMapping;
-        this.rowTrackingEnabled = rowTrackingEnabled;
-        this.firstRowId = firstRowId;
-        this.maxSequenceNumber = maxSequenceNumber;
-        this.systemFields = systemFields;
+        this(
+                tableRowType,
+                readerFactory,
+                context,
+                indexMapping,
+                castMapping,
+                partitionInfo,
+                rowTrackingEnabled,
+                firstRowId,
+                maxSequenceNumber,
+                systemFields,
+                false);
     }
 
     @Nullable
     @Override
     public FileRecordIterator<InternalRow> readBatch() throws IOException {
-        FileRecordIterator<InternalRow> iterator = reader.readBatch();
+        FileRecordIterator<InternalRow> iterator = null;
+        try {
+            iterator = reader.readBatch();
+        } catch (IOException e) {
+            if (ignoreReadFail) {
+                return null;
+            } else {
+                throw e;
+            }
+        }
         if (iterator == null) {
             return null;
         }
@@ -149,6 +193,10 @@ public class DataFileRecordReader implements FileRecordReader<InternalRow> {
 
     @Override
     public void close() throws IOException {
-        reader.close();
+        if (ignoreReadFail) {
+            IOUtils.closeQuietly(reader);
+        } else {
+            reader.close();
+        }
     }
 }

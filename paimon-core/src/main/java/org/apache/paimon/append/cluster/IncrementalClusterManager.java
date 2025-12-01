@@ -74,7 +74,8 @@ public class IncrementalClusterManager {
                         options.clusteringColumns(),
                         options.maxSizeAmplificationPercent(),
                         options.sortedRunSizeRatio(),
-                        options.numSortedRunCompactionTrigger());
+                        options.numSortedRunCompactionTrigger(),
+                        options.ignoreReadFail());
         this.clusterCurve = options.clusteringStrategy(options.clusteringColumns().size());
         this.clusterKeys = options.clusteringColumns();
         this.maxLevel = options.numLevels();

@@ -70,6 +70,7 @@ public class ConcatRecordReader<T> implements RecordReader<T> {
                 current.close();
                 current = null;
             } else if (queue.size() > 0) {
+                // generate reader will init
                 current = queue.poll().get();
             } else {
                 return null;

@@ -90,6 +90,7 @@ public abstract class AbstractFileStoreWrite<T> implements FileStoreWrite<T> {
     protected CompactionMetrics compactionMetrics = null;
     protected final String tableName;
     private final boolean legacyPartitionName;
+    private final boolean ignoreReadFail;
 
     protected AbstractFileStoreWrite(
             SnapshotManager snapshotManager,
@@ -114,6 +115,7 @@ public abstract class AbstractFileStoreWrite<T> implements FileStoreWrite<T> {
         this.tableName = tableName;
         this.writerNumberMax = options.writeMaxWritersToSpill();
         this.legacyPartitionName = options.legacyPartitionName();
+        this.ignoreReadFail = options.ignoreReadFail();
     }
 
     @Override
@@ -419,6 +421,7 @@ public abstract class AbstractFileStoreWrite<T> implements FileStoreWrite<T> {
 
         if (writerNumber() >= writerNumberMax) {
             try {
+                // PostponeBucketFileStoreWrite for pk bucket table
                 forceBufferSpill();
             } catch (Exception e) {
                 throw new RuntimeException("Error happens while force buffer spill", e);
@@ -426,7 +429,7 @@ public abstract class AbstractFileStoreWrite<T> implements FileStoreWrite<T> {
         }
 
         RestoreFiles restored = RestoreFiles.empty();
-        if (!ignorePreviousFiles) {
+        if (!ignorePreviousFiles || ignoreReadFail) {
             restored = scanExistingFileMetas(partition, bucket);
         }
 

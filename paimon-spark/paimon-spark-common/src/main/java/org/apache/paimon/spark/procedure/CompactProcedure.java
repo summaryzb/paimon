@@ -187,19 +187,33 @@ public class CompactProcedure extends BaseProcedure {
                 partitions == null || where == null,
                 "partitions and where cannot be used together.");
         String finalWhere = partitions != null ? toWhere(partitions) : where;
-        return modifyPaimonTable(
+        return modifySparkTable(
                 tableIdent,
-                table -> {
+                sparkTable -> {
+                    // if loadSpark table do not execute again, then no need to change the order of
+                    // set dynamic
+                    org.apache.paimon.table.Table table = sparkTable.getTable();
+                    HashMap<String, String> dynamicOptions = new HashMap<>();
+                    ProcedureUtils.putIfNotEmpty(
+                            dynamicOptions, CoreOptions.WRITE_ONLY.key(), "false");
+                    ProcedureUtils.putAllOptions(dynamicOptions, options);
+                    // set dynamic options early
+                    table = table.copy(dynamicOptions);
                     checkArgument(table instanceof FileStoreTable);
+                    CoreOptions coreOptions = ((FileStoreTable) table).coreOptions();
                     checkArgument(
-                            !((FileStoreTable) table).coreOptions().dataEvolutionEnabled(),
+                            !(partitionIdleTime != null && coreOptions.ignoreReadFail()),
+                            "partitionIdleTime should be null, when use toleration compaction");
+                    checkArgument(
+                            !coreOptions.dataEvolutionEnabled(),
                             "Compact operation is not supported when data evolution is enabled yet.");
                     checkArgument(
                             sortColumns.stream().noneMatch(table.partitionKeys()::contains),
                             "order_by should not contain partition cols, because it is meaningless, your order_by cols are %s, and partition cols are %s",
                             sortColumns,
                             table.partitionKeys());
-                    DataSourceV2Relation relation = createRelation(tableIdent);
+                    DataSourceV2Relation relation =
+                            createRelation(tableIdent, sparkTable.copy(table));
                     Expression condition = null;
                     if (!StringUtils.isNullOrWhitespaceOnly(finalWhere)) {
                         condition = ExpressionUtils.resolveFilter(spark(), relation, finalWhere);
@@ -213,15 +227,14 @@ public class CompactProcedure extends BaseProcedure {
                                 table.partitionKeys());
                     }
 
-                    HashMap<String, String> dynamicOptions = new HashMap<>();
-                    ProcedureUtils.putIfNotEmpty(
-                            dynamicOptions, CoreOptions.WRITE_ONLY.key(), "false");
-                    ProcedureUtils.putAllOptions(dynamicOptions, options);
-                    table = table.copy(dynamicOptions);
-                    if (((FileStoreTable) table).coreOptions().clusteringIncrementalEnabled()
+                    if (coreOptions.clusteringIncrementalEnabled()
                             && (!OrderType.NONE.name().equals(sortType))) {
                         throw new IllegalArgumentException(
                                 "The table has enabled incremental clustering, do not support sort compact.");
+                    }
+                    if (coreOptions.ignoreReadFail() && (!FULL.equalsIgnoreCase(compactStrategy))) {
+                        throw new IllegalArgumentException(
+                                "The table has enabled compaction.ignore-read-fail, only support full compact.");
                     }
 
                     InternalRow internalRow =
@@ -264,7 +277,9 @@ public class CompactProcedure extends BaseProcedure {
             // make non-full compact strategy as default for incremental clustering.
             compactStrategy = clusterIncrementalEnabled ? MINOR : FULL;
         }
-        boolean fullCompact = compactStrategy.equalsIgnoreCase(FULL);
+        // full compaction for fix read error
+        boolean fullCompact =
+                table.coreOptions().ignoreReadFail() || compactStrategy.equalsIgnoreCase(FULL);
         RowType partitionType = table.schema().logicalPartitionType();
         Predicate partitionFilter =
                 condition == null
@@ -292,8 +307,10 @@ public class CompactProcedure extends BaseProcedure {
                     break;
                 case BUCKET_UNAWARE:
                     if (clusterIncrementalEnabled) {
+                        // done, use KnowSplitTable to scan. no partition predicate
                         clusterIncrementalUnAwareBucketTable(table, fullCompact, relation);
                     } else {
+                        // done, use direct create read to scan
                         compactUnAwareBucketTable(
                                 table, partitionPredicate, partitionIdleTime, javaSparkContext);
                     }
@@ -305,6 +322,7 @@ public class CompactProcedure extends BaseProcedure {
         } else {
             switch (bucketMode) {
                 case BUCKET_UNAWARE:
+                    // done
                     sortCompactUnAwareBucketTable(
                             table, orderType, sortColumns, relation, partitionFilter);
                     break;
@@ -362,6 +380,8 @@ public class CompactProcedure extends BaseProcedure {
                                                 while (pairIterator.hasNext()) {
                                                     Pair<byte[], Integer> pair =
                                                             pairIterator.next();
+                                                    // writer should contain table properties read
+                                                    // ignore error
                                                     write.compact(
                                                             SerializationUtils.deserializeBinaryRow(
                                                                     pair.getLeft()),
@@ -410,8 +430,13 @@ public class CompactProcedure extends BaseProcedure {
             compactionTasks = new ArrayList<>();
         }
         if (partitionIdleTime != null) {
+            // todo reader scan partition info ahead using partitionPredicate
+            SnapshotReader snapshotReader = table.newSnapshotReader();
+            if (partitionPredicate != null) {
+                snapshotReader.withPartitionFilter(partitionPredicate);
+            }
             Map<BinaryRow, Long> partitionInfo =
-                    table.newSnapshotReader().partitionEntries().stream()
+                    snapshotReader.partitionEntries().stream()
                             .collect(
                                     Collectors.toMap(
                                             PartitionEntry::partition,
@@ -472,6 +497,8 @@ public class CompactProcedure extends BaseProcedure {
                                                                     taskIterator.next());
                                                     messages.add(
                                                             messageSer.serialize(
+                                                                    // include all tasks
+                                                                    // corresponding to target files
                                                                     task.doCompact(table, write)));
                                                 }
                                                 return messages.iterator();

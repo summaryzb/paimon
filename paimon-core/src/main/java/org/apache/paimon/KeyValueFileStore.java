@@ -109,6 +109,7 @@ public class KeyValueFileStore extends AbstractFileStore<KeyValue> {
         }
     }
 
+    // create reader
     @Override
     public MergeFileSplitRead newRead() {
         return new MergeFileSplitRead(
@@ -120,6 +121,8 @@ public class KeyValueFileStore extends AbstractFileStore<KeyValue> {
                 mfFactory,
                 newReaderFactoryBuilder());
     }
+
+    // create reader
 
     public RawFileSplitRead newBatchRawFileRead() {
         return new RawFileSplitRead(
@@ -201,6 +204,8 @@ public class KeyValueFileStore extends AbstractFileStore<KeyValue> {
                 keyValueFieldsExtractor,
                 tableName);
     }
+
+    // spark table get meta, new Scan final implementation
 
     @Override
     public KeyValueFileStoreScan newScan() {

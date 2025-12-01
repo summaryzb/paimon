@@ -256,7 +256,7 @@ public class KeyValueFileStoreWrite extends MemoryFileStoreWrite<KeyValue> {
                         options.numSortedRunCompactionTrigger(),
                         FullCompactTrigger.create(options),
                         OffPeakHours.create(options));
-        if (options.compactionForceUpLevel0()) {
+        if (options.compactionForceUpLevel0() || options.ignoreReadFail()) {
             return new ForceUpLevel0Compaction(universal, null);
         } else {
             return universal;

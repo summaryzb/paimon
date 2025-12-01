@@ -70,6 +70,7 @@ public class KeyValueFileReaderFactory implements FileReaderFactory<KeyValue> {
     private final Map<FormatKey, FormatReaderMapping> formatReaderMappings;
     private final BinaryRow partition;
     private final DeletionVector.Factory dvFactory;
+    private final boolean ignoreReadFail;
 
     private KeyValueFileReaderFactory(
             FileIO fileIO,
@@ -81,7 +82,8 @@ public class KeyValueFileReaderFactory implements FileReaderFactory<KeyValue> {
             DataFilePathFactory pathFactory,
             long asyncThreshold,
             BinaryRow partition,
-            DeletionVector.Factory dvFactory) {
+            DeletionVector.Factory dvFactory,
+            boolean ignoreReadFail) {
         this.fileIO = fileIO;
         this.schemaManager = schemaManager;
         this.schema = schema;
@@ -93,6 +95,7 @@ public class KeyValueFileReaderFactory implements FileReaderFactory<KeyValue> {
         this.partition = partition;
         this.formatReaderMappings = new HashMap<>();
         this.dvFactory = dvFactory;
+        this.ignoreReadFail = ignoreReadFail;
     }
 
     @Override
@@ -139,7 +142,8 @@ public class KeyValueFileReaderFactory implements FileReaderFactory<KeyValue> {
                         false,
                         null,
                         -1,
-                        Collections.emptyMap());
+                        Collections.emptyMap(),
+                        ignoreReadFail);
 
         Optional<DeletionVector> deletionVector = dvFactory.create(file.fileName());
         if (deletionVector.isPresent() && !deletionVector.get().isEmpty()) {
@@ -276,7 +280,8 @@ public class KeyValueFileReaderFactory implements FileReaderFactory<KeyValue> {
                     pathFactory.createDataFilePathFactory(partition, bucket),
                     options.fileReaderAsyncThreshold().getBytes(),
                     partition,
-                    dvFactory);
+                    dvFactory,
+                    options.ignoreReadFail());
         }
 
         public FileIO fileIO() {

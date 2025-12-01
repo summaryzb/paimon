@@ -676,6 +676,16 @@ public class CoreOptions implements Serializable {
                     .defaultValue(Duration.ofSeconds(10))
                     .withDescription("Max retry wait time when commit failed.");
 
+    public static final ConfigOption<Boolean> COMPACTION_IGNORE_READ_FAIL =
+            key("compaction.ignore-read-fail")
+                    .booleanType()
+                    .defaultValue(false)
+                    .withDescription(
+                            "If set to true, compaction strategy will always include all files in candidates without "
+                                    + "consider fileSize or read error. This is supposed to compact data files in specified partitions which may "
+                                    + "contain corrupt datafiles (or storage error). After compaction all new generated files will be valid, "
+                                    + "however some data may be lost or present in old version, this is acceptable comparing to read-fail error.");
+
     public static final ConfigOption<Integer> COMPACTION_MAX_SIZE_AMPLIFICATION_PERCENT =
             key("compaction.max-size-amplification-percent")
                     .intType()
@@ -2506,6 +2516,10 @@ public class CoreOptions implements Serializable {
         return options.get(COMMIT_MAX_RETRIES);
     }
 
+    public boolean ignoreReadFail() {
+        return options.get(COMPACTION_IGNORE_READ_FAIL);
+    }
+
     public int maxSizeAmplificationPercent() {
         return options.get(COMPACTION_MAX_SIZE_AMPLIFICATION_PERCENT);
     }
@@ -2770,7 +2784,7 @@ public class CoreOptions implements Serializable {
     }
 
     public Boolean forceRewriteAllFiles() {
-        return options.get(COMPACTION_FORCE_REWRITE_ALL_FILES);
+        return options.get(COMPACTION_FORCE_REWRITE_ALL_FILES) || ignoreReadFail();
     }
 
     public String partitionTimestampFormatter() {

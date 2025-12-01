@@ -77,6 +77,7 @@ public class FileIndexPredicate implements Closeable {
         }
         Set<String> requiredFieldNames = getRequiredNames(predicate);
         Map<String, Collection<FileIndexReader>> indexReaders = new HashMap<>();
+        // file index reader toleration
         requiredFieldNames.forEach(name -> indexReaders.put(name, reader.readColumnIndex(name)));
         FileIndexResult result = new FileIndexPredicateTest(indexReaders).test(predicate);
         if (!result.remain()) {

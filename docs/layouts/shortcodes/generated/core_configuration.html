@@ -249,6 +249,12 @@ under the License.
             <td>If set to true, compaction strategy will always include all level 0 files in candidates.</td>
         </tr>
         <tr>
+            <td><h5>compaction.ignore-read-fail</h5></td>
+            <td style="word-wrap: break-word;">false</td>
+            <td>Boolean</td>
+            <td>If set to true, compaction strategy will always include all files in candidates without consider fileSize or read error. This is supposed to compact data files in specified partitions which may contain corrupt datafiles (or storage error). After compaction all new generated files will be valid, however some data may be lost or present in old version, this is acceptable comparing to read-fail error.</td>
+        </tr>
+        <tr>
             <td><h5>compaction.max-size-amplification-percent</h5></td>
             <td style="word-wrap: break-word;">200</td>
             <td>Integer</td>

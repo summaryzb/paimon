@@ -251,6 +251,7 @@ public class MergeFileSplitRead implements SplitRead<KeyValue> {
         }
 
         if (split.isStreaming() || split.bucket() == BucketMode.POSTPONE_BUCKET) {
+            // easy reader
             return createNoMergeReader(
                     split.partition(),
                     split.bucket(),

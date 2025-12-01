@@ -79,6 +79,13 @@ abstract class BaseProcedure implements Procedure {
         return execute(ident, true, func);
     }
 
+    protected <T> T modifySparkTable(Identifier ident, Function<SparkTable, T> func) {
+        SparkTable sparkTable = loadSparkTable(ident);
+        T result = func.apply(sparkTable);
+        refreshSparkCache(ident, sparkTable);
+        return result;
+    }
+
     private <T> T execute(
             Identifier ident,
             boolean refreshSparkCache,
@@ -109,9 +116,8 @@ abstract class BaseProcedure implements Procedure {
         }
     }
 
-    protected DataSourceV2Relation createRelation(Identifier ident) {
-        return DataSourceV2Relation.create(
-                loadSparkTable(ident), Option.apply(tableCatalog), Option.apply(ident));
+    protected DataSourceV2Relation createRelation(Identifier ident, Table table) {
+        return DataSourceV2Relation.create(table, Option.apply(tableCatalog), Option.apply(ident));
     }
 
     protected void refreshSparkCache(Identifier ident, Table table) {

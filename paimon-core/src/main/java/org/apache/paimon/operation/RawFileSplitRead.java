@@ -18,6 +18,7 @@
 
 package org.apache.paimon.operation;
 
+import org.apache.paimon.CoreOptions;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.deletionvectors.ApplyDeletionVectorReader;
@@ -163,6 +164,8 @@ public class RawFileSplitRead implements SplitRead<InternalRow> {
             List<DataFileMeta> files,
             @Nullable Map<String, IOExceptionSupplier<DeletionVector>> dvFactories)
             throws IOException {
+        CoreOptions options = new CoreOptions(schema.options());
+        boolean ignoreReadFail = options.ignoreReadFail();
         DataFilePathFactory dataFilePathFactory =
                 pathFactory.createDataFilePathFactory(partition, bucket);
         List<ReaderSupplier<InternalRow>> suppliers = new ArrayList<>();
@@ -189,9 +192,10 @@ public class RawFileSplitRead implements SplitRead<InternalRow> {
                             dataFilePathFactory,
                             file,
                             formatReaderMappingBuilder,
-                            dvFactories));
+                            dvFactories,
+                            ignoreReadFail));
         }
-
+        // some reader may fail in this concatReader structure
         return ConcatRecordReader.create(suppliers);
     }
 
@@ -200,7 +204,8 @@ public class RawFileSplitRead implements SplitRead<InternalRow> {
             DataFilePathFactory dataFilePathFactory,
             DataFileMeta file,
             Builder formatBuilder,
-            @Nullable Map<String, IOExceptionSupplier<DeletionVector>> dvFactories) {
+            @Nullable Map<String, IOExceptionSupplier<DeletionVector>> dvFactories,
+            boolean ignoreReadFail) {
         String formatIdentifier = DataFilePathFactory.formatIdentifier(file.fileName());
         long schemaId = file.schemaId();
 
@@ -219,7 +224,12 @@ public class RawFileSplitRead implements SplitRead<InternalRow> {
                 dvFactories == null ? null : dvFactories.get(file.fileName());
         return () ->
                 createFileReader(
-                        partition, file, dataFilePathFactory, formatReaderMapping, dvFactory);
+                        partition,
+                        file,
+                        dataFilePathFactory,
+                        formatReaderMapping,
+                        dvFactory,
+                        ignoreReadFail);
     }
 
     private FileRecordReader<InternalRow> createFileReader(
@@ -227,11 +237,13 @@ public class RawFileSplitRead implements SplitRead<InternalRow> {
             DataFileMeta file,
             DataFilePathFactory dataFilePathFactory,
             FormatReaderMapping formatReaderMapping,
-            IOExceptionSupplier<DeletionVector> dvFactory)
+            IOExceptionSupplier<DeletionVector> dvFactory,
+            boolean ignoreReadFail)
             throws IOException {
         FileIndexResult fileIndexResult = null;
         DeletionVector deletionVector = dvFactory == null ? null : dvFactory.get();
         if (fileIndexReadEnabled) {
+            // raw file split
             fileIndexResult =
                     FileIndexEvaluator.evaluate(
                             fileIO,
@@ -254,6 +266,7 @@ public class RawFileSplitRead implements SplitRead<InternalRow> {
 
         FormatReaderContext formatReaderContext =
                 new FormatReaderContext(
+                        // raw file split filepath
                         fileIO, dataFilePathFactory.toPath(file), file.fileSize(), selection);
         FileRecordReader<InternalRow> fileRecordReader =
                 new DataFileRecordReader(
@@ -266,7 +279,8 @@ public class RawFileSplitRead implements SplitRead<InternalRow> {
                         rowTrackingEnabled,
                         file.firstRowId(),
                         file.maxSequenceNumber(),
-                        formatReaderMapping.getSystemFields());
+                        formatReaderMapping.getSystemFields(),
+                        ignoreReadFail);
 
         if (fileIndexResult instanceof BitmapIndexResult) {
             fileRecordReader =

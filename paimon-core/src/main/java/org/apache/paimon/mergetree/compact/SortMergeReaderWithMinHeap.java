@@ -76,6 +76,7 @@ public class SortMergeReaderWithMinHeap<T> implements SortMergeReader<T> {
     public RecordIterator<T> readBatch() throws IOException {
         for (RecordReader<KeyValue> reader : nextBatchReaders) {
             while (true) {
+                // skip when read error in lsm-tree
                 RecordIterator<KeyValue> iterator = reader.readBatch();
                 if (iterator == null) {
                     // no more batches, permanently remove this reader

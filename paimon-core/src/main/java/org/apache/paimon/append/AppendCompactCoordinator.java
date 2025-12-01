@@ -82,6 +82,7 @@ public class AppendCompactCoordinator {
     private final int minFileNum;
     private final DvMaintainerCache dvMaintainerCache;
     private final FilesIterator filesIterator;
+    private final boolean alwaysCompact;
 
     final Map<BinaryRow, SubCoordinator> subCoordinators = new HashMap<>();
 
@@ -106,6 +107,7 @@ public class AppendCompactCoordinator {
                         ? new DvMaintainerCache(table.store().newIndexFileHandler())
                         : null;
         this.filesIterator = new FilesIterator(table, isStreaming, partitionPredicate);
+        this.alwaysCompact = options.ignoreReadFail();
     }
 
     public List<AppendCompactTask> run() {
@@ -347,7 +349,7 @@ public class AppendCompactCoordinator {
             }
 
             private boolean enoughInputFiles() {
-                return bin.size() >= minFileNum;
+                return bin.size() >= minFileNum || alwaysCompact;
             }
         }
     }
@@ -465,7 +467,9 @@ public class AppendCompactCoordinator {
     }
 
     private boolean shouldCompact(BinaryRow partition, DataFileMeta file) {
-        return file.fileSize() < compactionFileSize || tooHighDeleteRatio(partition, file);
+        return file.fileSize() < compactionFileSize
+                || tooHighDeleteRatio(partition, file)
+                || alwaysCompact;
     }
 
     private boolean tooHighDeleteRatio(BinaryRow partition, DataFileMeta file) {

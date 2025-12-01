@@ -88,6 +88,45 @@ abstract class CompactProcedureTestBase extends PaimonSparkTestBase with StreamT
     }
   }
 
+  test("Paimon Procedure: compact aware bucket pk table with compaction.ignore-read-fail") {
+    withTable("T") {
+      spark.sql(s"""
+                   |CREATE TABLE T (id INT, value STRING, pt STRING)
+                   |TBLPROPERTIES ('primary-key'='id, pt', 'bucket'='1', 'write-only'='true')
+                   |PARTITIONED BY (pt)
+                   |""".stripMargin)
+
+      val table = loadTable("T")
+
+      spark.sql(s"INSERT INTO T VALUES (1, 'a', 'p1'), (2, 'b', 'p2')")
+      spark.sql(s"INSERT INTO T VALUES (3, 'c', 'p1'), (4, 'd', 'p2')")
+
+      // ignore-read-fail requires full compaction
+      assert(
+        intercept[IllegalArgumentException] {
+          spark.sql("CALL sys.compact(table => 'T', compact_strategy => 'minor'," +
+            "options => 'compaction.ignore-read-fail=true')")
+        }.getMessage
+          .contains("The table has enabled compaction.ignore-read-fail, only support full compact"))
+
+      // always compact though trigger file num is not satisfied
+      spark.sql(
+        "CALL sys.compact(table => 'T', compact_strategy => 'full'," +
+          "options => 'compaction.ignore-read-fail=true,num-sorted-run.compaction-trigger=3')")
+
+      Assertions.assertThat(lastSnapshotId(table)).isEqualTo(3)
+      Assertions.assertThat(lastSnapshotCommand(table).equals(CommitKind.COMPACT)).isTrue
+
+      val splits = table.newSnapshotReader.read.dataSplits
+      splits.forEach(
+        split => {
+          Assertions
+            .assertThat(split.dataFiles.size)
+            .isEqualTo(1)
+        })
+    }
+  }
+
   // ----------------------- Sort Compact -----------------------
 
   test("Paimon Procedure: sort compact") {
@@ -435,6 +474,13 @@ abstract class CompactProcedureTestBase extends PaimonSparkTestBase with StreamT
           // compact condition no longer met
           spark.sql(s"CALL sys.compact(table => 'T')")
           Assertions.assertThat(lastSnapshotId(table)).isEqualTo(4)
+          spark.sql(s"CALL sys.compact(table => 'T', compact_strategy => 'full')")
+          Assertions.assertThat(lastSnapshotId(table)).isEqualTo(4)
+
+          // tolerate compact force full compact
+          spark.sql(
+            s"CALL sys.compact(table => 'T', compact_strategy => 'full', options => 'compaction.ignore-read-fail=true')")
+          Assertions.assertThat(lastSnapshotId(table)).isEqualTo(5)
 
           checkAnswer(
             spark.sql(s"SELECT * FROM T ORDER BY id"),

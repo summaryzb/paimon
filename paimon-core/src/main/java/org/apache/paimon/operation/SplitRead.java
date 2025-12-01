@@ -35,6 +35,7 @@ import java.io.IOException;
  *
  * @param <T> type of record to read.
  */
+// mark this split as tolerate reader
 public interface SplitRead<T> {
 
     SplitRead<T> forceKeepDelete();
@@ -56,6 +57,7 @@ public interface SplitRead<T> {
     /** Create a {@link RecordReader} from split. */
     RecordReader<T> createReader(DataSplit split) throws IOException;
 
+    // wrap split read and actual reader
     static <L, R> SplitRead<R> convert(
             SplitRead<L> read, IOFunction<DataSplit, RecordReader<R>> convertedFactory) {
         return new SplitRead<R>() {

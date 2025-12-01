@@ -394,9 +394,9 @@ under the License.
             <modules>
                 <module>paimon-spark/paimon-spark3-common</module>
                 <module>paimon-spark/paimon-spark-3.5</module>
-                <module>paimon-spark/paimon-spark-3.4</module>
-                <module>paimon-spark/paimon-spark-3.3</module>
-                <module>paimon-spark/paimon-spark-3.2</module>
+<!--                <module>paimon-spark/paimon-spark-3.4</module>-->
+<!--                <module>paimon-spark/paimon-spark-3.3</module>-->
+<!--                <module>paimon-spark/paimon-spark-3.2</module>-->
             </modules>
             <properties>
                 <scala.binary.version>2.12</scala.binary.version>

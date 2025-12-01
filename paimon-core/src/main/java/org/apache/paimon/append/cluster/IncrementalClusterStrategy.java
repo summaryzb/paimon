@@ -39,22 +39,26 @@ public class IncrementalClusterStrategy {
     private final SchemaManager schemaManager;
 
     private final UniversalCompaction universalCompaction;
-
+    private final boolean ignoreReadFail;
+    //
     public IncrementalClusterStrategy(
             SchemaManager schemaManager,
             List<String> clusterKeys,
             int maxSizeAmp,
             int sizeRatio,
-            int numRunCompactionTrigger) {
+            int numRunCompactionTrigger,
+            boolean ignoreReadFail) {
         this.universalCompaction =
                 new UniversalCompaction(maxSizeAmp, sizeRatio, numRunCompactionTrigger, null, null);
         this.clusterKeys = clusterKeys;
         this.schemaManager = schemaManager;
+        this.ignoreReadFail = ignoreReadFail;
     }
 
     public Optional<CompactUnit> pick(
             int numLevels, List<LevelSortedRun> runs, boolean fullCompaction) {
         if (fullCompaction) {
+            // ignore read fail pick full compaction
             return pickFullCompaction(numLevels, runs);
         }
         return universalCompaction.pick(numLevels, runs);
@@ -70,7 +74,7 @@ public class IncrementalClusterStrategy {
             return Optional.empty();
         }
 
-        if (runs.size() == 1 && runs.get(0).level() == maxLevel) {
+        if (runs.size() == 1 && runs.get(0).level() == maxLevel && !ignoreReadFail) {
             long schemaId = runs.get(0).run().files().get(0).schemaId();
             CoreOptions coreOptions = CoreOptions.fromMap(schemaManager.schema(schemaId).options());
             // only one sorted run in the maxLevel with the same cluster key
